@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WinRAR Keygen</title>
+<link rel="icon" href="favicon.ico">
+<title>RAR Keygen</title>
+<script src="keygen.js"></script>
+<style>
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #0d1117;
+    color: #c9d1d9;
+    margin: 2em;
+}
+
+.container {
+    max-width: 600px;
+    margin: auto;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 2em;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+label {
+    display: block;
+    margin-bottom: 1em;
+    font-weight: 600;
+    color: #c9d1d9;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 0.5em 0.75em;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: #0d1117;
+    color: #c9d1d9;
+    margin-top: 0.25em;
+    box-sizing: border-box;
+}
+
+input[type="text"]::placeholder {
+    color: #8b949e;
+}
+
+input[type="button"] {
+    background-color: #238636;
+    color: white;
+    border: 1px solid #238636;
+    padding: 0.5em 1em;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 1em;
+}
+
+input[type="button"]:hover {
+    background-color: #2ea043;
+}
+
+textarea {
+    width: 100%;
+    min-height: 200px;
+    margin-top: 1em;
+    padding: 0.5em;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 13px;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    resize: vertical;
+    box-sizing: border-box;
+    background-color: #0d1117;
+    color: #c9d1d9;
+}
+
+a.download-link {
+    display: inline-block;
+    margin-top: 1em;
+    color: #58a6ff;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+</style>
+</head>
+<body>
+<div class="container">
+    <label>
+        Username
+        <input id="username" type="text" maxlength="50" value="Microsoft Corporation"/>
+    </label>
+    <label>
+        License Type
+        <input id="licenseType" type="text" maxlength="50" value="Unlimited Perpetual License"/>
+    </label>
+    <input id="genBtn" type="button" value="Generate"/>
+    <textarea id="output" readonly></textarea>
+    <a id="saveBtn" class="download-link" hidden>Download Key</a>
+</div>
+
+<script>
+const mallocByteBuffer = len => {
+    const ptr = Module._malloc(len)
+    return new Uint8Array(Module.HEAPU8.buffer, ptr, len)
+}
+
+const keygen = (username, licenseType, outputPointer) => Module.ccall('_Z6keygenPKcS0_Pc', null, ['string', 'string', 'number'], [username, licenseType, outputPointer]);
+
+const strToDataUrl = str => {
+    const te = new TextEncoder();
+    const b64Str = btoa(String.fromCharCode(...te.encode(str)));
+    return 'data:text/plain;charset=utf-8;base64,' + b64Str;
+}
+
+const generateKey = function () {
+    document.getElementById('output').textContent = '';
+    const saveBtn = document.getElementById('saveBtn');
+    saveBtn.onclick = null;
+    saveBtn.hidden = true;
+    const username = document.getElementById('username').value;
+    const licenseType = document.getElementById('licenseType').value;
+
+    const outBuffer = mallocByteBuffer(600);
+    keygen(username, licenseType, outBuffer.byteOffset);
+    const output = Array.from(outBuffer).map(v => String.fromCharCode(v)).join('').replace(/\0.*/g, '');
+    document.getElementById('output').textContent = output;
+    saveBtn.hidden = false;
+    saveBtn.onclick = () => {
+        const aTag = document.createElement('a');
+        aTag.download = 'rarreg.key';
+        aTag.href = strToDataUrl(output);
+        aTag.click();
+    };
+}
+
+document.getElementById('genBtn').onclick = generateKey;
+</script>
+</body>
+</html>
