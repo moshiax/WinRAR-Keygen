@@ -109,7 +109,32 @@ const mallocByteBuffer = len => {
     return new Uint8Array(Module.HEAPU8.buffer, ptr, len)
 }
 
-const keygen = (username, licenseType, outputPointer) => Module.ccall('_Z6keygenPKcS0_Pc', null, ['string', 'string', 'number'], [username, licenseType, outputPointer]);
+const keygen = (username, licenseType, outBuffer) => {
+    if (typeof username !== 'string') throw new TypeError('username must be string');
+    if (typeof licenseType !== 'string') throw new TypeError('licenseType must be string');
+    if (!(outBuffer instanceof Uint8Array)) throw new TypeError('outBuffer must be Uint8Array');
+
+    let output = '';
+    while (true) {
+        try {
+            if (typeof Module !== 'undefined' && Module.ccall) {
+                Module.ccall('_Z6keygenPKcS0_Pc', null, ['string', 'string', 'number'], [username, licenseType, outBuffer.byteOffset]);
+            }
+            output = Array.from(outBuffer)
+                .map(v => String.fromCharCode(v))
+                .join('')
+                .replace(/\0.*$/g, '');
+            if (output.length > 0) break;
+        } catch (e) {
+            if (typeof WebAssembly !== 'undefined') {
+                console.warn('WASM error:', e);
+            } else {
+                throw e;
+            }
+        }
+    }
+    return output;
+};
 
 const strToDataUrl = str => {
     const te = new TextEncoder();
@@ -126,8 +151,8 @@ const generateKey = function () {
     const licenseType = document.getElementById('licenseType').value;
 
     const outBuffer = mallocByteBuffer(600);
-    keygen(username, licenseType, outBuffer.byteOffset);
-    const output = Array.from(outBuffer).map(v => String.fromCharCode(v)).join('').replace(/\0.*/g, '');
+    const output = keygen(username, licenseType, outBuffer);
+
     document.getElementById('output').textContent = output;
     saveBtn.hidden = false;
     saveBtn.onclick = () => {
