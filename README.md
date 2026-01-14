@@ -1,9 +1,10 @@
 A hook for implementing Winrar key generation using WASM from https://winrar.netlify.app binary
 ---
-Pure js implementation from https://github.com/danieldac1819/WinRAR-Keygen-Web
+Slightly modified by me js implementation from https://github.com/danieldac1819/WinRAR-Keygen-Web
 <pre>
 const GF2_15_exp_tab = generateGF2_15_exp_tab();
 const GF2_15_log_tab = generateGF2_15_log_tab();
+const HEX_TAB = Array.from({length: 256}, (_, i) => i.toString(16).padStart(2, '0'));
 
 function generateGF2_15_exp_tab() {
     const EXP_SIZE = 0x7fff; // 32767
@@ -38,29 +39,22 @@ function generateGF2_15_log_tab() {
 function CRC32(r) { for (var a, o = [], c = 0; c < 256; c++) { a = c; for (var f = 0; f < 8; f++)a = 1 & a ? 3988292384 ^ a >>> 1 : a >>> 1; o[c] = a } for (var n = -1, t = 0; t < r.length; t++)n = n >>> 8 ^ o[255 & (n ^ r.charCodeAt(t))]; return (n) >>> 0 };
 
 function Bytes_to_BigInt(b) {
-    var ans = 0n;
-    for (var i = 0; i < b.length; i++) {
-        ans = ans + (BigInt(((b[i]).charCodeAt(0)) & 0x0ff) << (BigInt(i * 8)));
-    }
+    let ans = 0n;
+    for (let i = 0; i < b.length; i++) ans |= BigInt(b[i].charCodeAt(0) & 0xff) << BigInt(i * 8);
     return ans;
 }
 function BigInt_to_Bytes(b, l) {
-    var ans = "";
-    var _b = 0n;
-    var c = 0;
-    _b = BigInt(b);
-    for (var k = 0; k < l; k++) {
-        c = Number(_b % (BigInt(256))) & 0x0ff;
-        ans = (String.fromCharCode(c)) + ans;
-        _b = (_b >> (8n));
+    let arr = Array(l);
+    let _b = BigInt(b);
+    for (let k = 0; k < l; k++) {
+        arr[l - k - 1] = String.fromCharCode(Number(_b & 0xffn));
+        _b >>= 8n;
     }
-    return ans;
+    return arr.join('');
 }
 function Bytes_to_Hex(b) {
-    var ans = "";
-    for (var i = 0; i < b.length; i++) {
-        ans = ans + (((((b[i]).charCodeAt(0)) & 0x0ff).toString(16)).padStart(2, '0'));
-    }
+    let ans = '';
+    for (let i = 0; i < b.length; i++) ans += HEX_TAB[b[i].charCodeAt(0) & 0xff];
     return ans;
 }
 function GF_add(a, b) {
@@ -71,70 +65,51 @@ function GF_sub(a, b) {
     return (a ^ b);
 }
 
+function GF215_mul(s1, s2) {
+    if (!s1 || !s2) return 0;
+    return GF2_15_exp_tab[(GF2_15_log_tab[s1] + GF2_15_log_tab[s2]) % 0x7fff];
+}
 function GF_mul(a, b) {
+    if (!a || !b) return 0n;
+    const Ta = new Uint32Array(17);
+    const Tb = new Uint32Array(17);
+    const Tc = new Uint32Array(34);
 
-    function GF215_mul(s1, s2) {
-        if ((s1 == 0) || (s2 == 0)) { return 0; }
-        else { return (GF2_15_exp_tab[(GF2_15_log_tab[s1] + GF2_15_log_tab[s2]) % (0x07fff)]); }
+    for (let k = 0; k < 17; k++) {
+        Ta[k] = Number(a & 0x7fffn);
+        Tb[k] = Number(b & 0x7fffn);
+        a >>= 15n;
+        b >>= 15n;
     }
 
-    if ((a == 0n) || (b == 0n)) { return 0n; }
-    else {
-        var Ta = new Uint32Array(17);
-        var Tb = new Uint32Array(17);
-        var Tc = new Uint32Array(34);
-        var k, r, res;
-        for (k = 0; k < 17; k++) {
-            Ta[k] = Number(a & (0x07fffn));
-            Tb[k] = Number(b & (0x07fffn));
-            a = a >> (15n);
-            b = b >> (15n);
-        }
-
-        for (k = 0; k < 34; k++) { Tc[k] = 0; }
-        for (k = 0; k < 17; k++) { for (r = 0; r < 17; r++) { Tc[k + r] ^= GF215_mul(Ta[k], Tb[r]); } }
-        for (k = 33; k > 16; k--) {
-            Tc[k - 17] ^= Tc[k];
-            Tc[k - 14] ^= Tc[k];
-            Tc[k] = 0;
-        }
-        res = 0n;
-        for (k = 16; k > 0; k--) { res = ((res + BigInt(Tc[k])) << (15n)); }
-        res = (res + BigInt(Tc[0]));
-        return res;
+    for (let k = 0; k < 17; k++) {
+        for (let r = 0; r < 17; r++) Tc[k + r] ^= GF215_mul(Ta[k], Tb[r]);
     }
+
+    for (let k = 33; k > 16; k--) {
+        Tc[k - 17] ^= Tc[k];
+        Tc[k - 14] ^= Tc[k];
+        Tc[k] = 0;
+    }
+
+    let res = 0n;
+    for (let k = 16; k >= 0; k--) res = (res << 15n) + BigInt(Tc[k]);
+    return res;
 }
 
 function GF_inv(a) {
-    if (a == 0n) { return 0n; }
-    else {
-        var base, ans, temp, r;
-        base = a;
-        ans = 1n;
-        temp = 0n;
-        for (r = 0; r < 16; r++) {
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            base = GF_mul(base, base);
-            ans = GF_mul(ans, base);
-        }
-        temp = GF_mul(ans, a);
-        temp = BigInt(GF2_15_exp_tab[(0x07fff - GF2_15_log_tab[Number(temp & (0x07fffn))]) % (0x07fff)]);
-        ans = GF_mul(ans, temp);
-        return ans;
+    if (a === 0n) return 0n;
+
+    let ans = 1n;
+    let base = a;
+
+    for (let r = 0; r < 16; r++) {
+        for (let i = 0; i < 15; i++) base = GF_mul(base, base);
+        ans = GF_mul(ans, base);
     }
+
+    const temp = BigInt(GF2_15_exp_tab[(0x7fff - GF2_15_log_tab[Number(GF_mul(ans, a) & 0x7fffn)]) % 0x7fff]);
+    return GF_mul(ans, temp);
 }
 
 function GF_div(a, b) { return GF_mul(a, GF_inv(b)); }
@@ -299,44 +274,27 @@ function SHA1(msg) {
 }
 
 function Winrar_format_SHA1(data) {
-    if (data.length == 0) { return "\x81\xb7\x3e\xeb\x29\x53\x26\x50\xa3\xf4\x5e\xdc\xd5\xb9\x47\x68\x4c\x3b\xe4\xcd"; }
-    else {
-        var hex_sha1_digest;
-        var sha1_digest = new Uint8Array(20);
-        var formated_sha1_digest = "";
-        var k = 0;
-        hex_sha1_digest = SHA1(data);
-        for (k = 0; k < 20; k++) {
-            sha1_digest[k] = (Number("0x" + hex_sha1_digest.substring(2 * k, 2 * k + 2))) & 0x0ff;
+    if (!data.length) return "\x81\xb7\x3e\xeb\x29\x53\x26\x50\xa3\xf4\x5e\xdc\xd5\xb9\x47\x68\x4c\x3b\xe4\xcd";
+
+    const hex = SHA1(data);
+    const out = new Array(20);
+    for (let i = 0; i < 20; i += 4) {
+        for (let j = 3; j >= 0; j--) {
+            out[i + 3 - j] = String.fromCharCode(Number("0x" + hex.substr(2 * (i + j), 2)));
         }
-        for (k = 0; k < 5; k++) {
-            formated_sha1_digest += String.fromCharCode(sha1_digest[4 * k + 3]);
-            formated_sha1_digest += String.fromCharCode(sha1_digest[4 * k + 2]);
-            formated_sha1_digest += String.fromCharCode(sha1_digest[4 * k + 1]);
-            formated_sha1_digest += String.fromCharCode(sha1_digest[4 * k + 0]);
-        }
-        return formated_sha1_digest;
     }
+    return out.join('');
 }
 
 function Winrar_get_privkey(data) {
     var d = Winrar_format_SHA1(data);
     var pri_key = "";
-    pri_key = pri_key + ((Winrar_format_SHA1("\x01\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x02\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x03\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x04\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x05\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x06\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x07\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x08\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x09\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x0a\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x0b\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x0c\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x0d\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x0e\x00\x00\x00" + d)).substring(0, 2));
-    pri_key = pri_key + ((Winrar_format_SHA1("\x0f\x00\x00\x00" + d)).substring(0, 2));
+
+    for (var i = 1; i <= 0x0f; i++) {
+        pri_key += Winrar_format_SHA1(
+            String.fromCharCode(i) + "\x00\x00\x00" + d
+        ).substring(0, 2);
+    }
 
     return pri_key;
 }
@@ -380,52 +338,26 @@ function Winrar_sign(data) {
 }
 
 function Winrar_KeyGen(USER, LIC) {
-    var temp = "";
-    var data = "";
-    var data0 = "";
-    var data1 = "";
-    var data2 = "";
-    var data3 = "";
-    var data1_r = 0n;
-    var data1_s = 0n;
-    var data1_rb = "";
-    var data1_sb = "";
-    var data2_r = 0n;
-    var data2_s = 0n;
-    var data2_rb = "";
-    var data2_sb = "";
+    const temp = BigInt_to_Bytes(Winrar_get_pubkey(Winrar_get_privkey(USER)), 32);
+    const data3 = Bytes_to_Hex("\x60" + temp.substring(0, 24));
+    const data0 = Bytes_to_Hex(BigInt_to_Bytes(Winrar_get_pubkey(Winrar_get_privkey(data3)), 32));
 
-    var RAR_UID = "";
-    var KEY_STR = "";
-    temp = BigInt_to_Bytes(Winrar_get_pubkey(Winrar_get_privkey(USER)), 32);
-    data3 = Bytes_to_Hex("\x60" + temp.substring(0, 24));
-    data0 = Bytes_to_Hex(BigInt_to_Bytes(Winrar_get_pubkey(Winrar_get_privkey(data3)), 32));
-    while (true) {
-        var [data1_r, data1_s] = Winrar_sign(LIC);
-        if ((data1_r < ((1n) << ((240n) - 1n))) && (data1_s < ((1n) << ((240n) - 1n)))) { break; }
-    }
-    data1_rb = Bytes_to_Hex(BigInt_to_Bytes(data1_r, 30));
-    data1_sb = Bytes_to_Hex(BigInt_to_Bytes(data1_s, 30));
-    data1 = "60" + data1_sb + data1_rb;
+    let data1_r, data1_s;
+    do [data1_r, data1_s] = Winrar_sign(LIC); while (data1_r >= 1n << 239n || data1_s >= 1n << 239n);
+    const data1 = "60" + Bytes_to_Hex(BigInt_to_Bytes(data1_s, 30)) + Bytes_to_Hex(BigInt_to_Bytes(data1_r, 30));
 
-    while (true) {
-    var [data2_r, data2_s] = Winrar_sign(USER + data0);
-    if ((data2_r < ((1n) << ((240n) - 1n))) && (data2_s < ((1n) << ((240n) - 1n)))) { break; }
-    }
-    data2_rb = Bytes_to_Hex(BigInt_to_Bytes(data2_r, 30));
-    data2_sb = Bytes_to_Hex(BigInt_to_Bytes(data2_s, 30));
-    data2 = "60" + data2_sb + data2_rb;
-    data = data0 + data1 + data2 + data3;
-    data = "6412212250" + data + ((CRC32(LIC + USER + data).toString(10)).padStart(10, "0"));
-    RAR_UID = Bytes_to_Hex(temp.substring(24, 32)) + data0.substring(0, 4);
-    KEY_STR = "RAR registration data\n" + USER + "\n" + LIC + "\nUID=" + RAR_UID + "\n";
-    KEY_STR = KEY_STR + (data.substring(0, 54)) + "\n";
-    KEY_STR = KEY_STR + (data.substring(54, 108)) + "\n";
-    KEY_STR = KEY_STR + (data.substring(108, 162)) + "\n";
-    KEY_STR = KEY_STR + (data.substring(162, 216)) + "\n";
-    KEY_STR = KEY_STR + (data.substring(216, 270)) + "\n";
-    KEY_STR = KEY_STR + (data.substring(270, 324)) + "\n";
-    KEY_STR = KEY_STR + (data.substring(324, 378)) + "\n";
+    let data2_r, data2_s;
+    do [data2_r, data2_s] = Winrar_sign(USER + data0); while (data2_r >= 1n << 239n || data2_s >= 1n << 239n);
+    const data2 = "60" + Bytes_to_Hex(BigInt_to_Bytes(data2_s, 30)) + Bytes_to_Hex(BigInt_to_Bytes(data2_r, 30));
+
+    let data = data0 + data1 + data2 + data3;
+    data = "6412212250" + data + CRC32(LIC + USER + data).toString(10).padStart(10, "0");
+
+    const RAR_UID = Bytes_to_Hex(temp.substring(24, 32)) + data0.substring(0, 4);
+
+    let KEY_STR = `RAR registration data\n${USER}\n${LIC}\nUID=${RAR_UID}\n`;
+    for (let i = 0; i < 7; i++) KEY_STR += data.substring(i * 54, (i + 1) * 54) + "\n";
+
     return KEY_STR;
 }
 
